@@ -114,7 +114,7 @@ sudo systemctl start odona-<dominio>.service
 
 ## Validado
 
-Sobre clones del dump original de Odoo Upgrade (PSI, ticket 4558031), 2026-08-24:
+Sobre clones del dump original de Odoo Upgrade (PSI, `4558031-upgraded.zip`), 2026-08-24:
 
 - Los tres módulos en `to upgrade` pasan a `installed`, exit 0.
 - **Ningún conteo cambió**: comparación campo por campo antes/después, idéntica.
