@@ -1,30 +1,39 @@
 # l10n-dominicana — rama `19.0-dummy-pre13`
 
-Esta rama **no contiene los módulos funcionales** de la localización dominicana.
-Contiene `l10n_do_accounting_legacy`: una versión **neutralizada, de solo
-lectura**, para bases migradas de Odoo 13 a Odoo 19.
+Versiones **neutralizadas, de solo lectura**, de los módulos de la localización
+dominicana, para bases migradas de Odoo 13 a Odoo 19.
 
 Fork de `indexa-git/l10n-dominicana`. Parte de `13.0` (commit `0431370`,
 versión `13.0.1.13.2`).
 
+**Correspondencia 1 a 1 con la rama `13.0`**: mismos nombres de módulo, mismos
+`depends`, mismos campos. Lo único que se quita es la lógica Python y las
+vistas.
+
 ## Para qué sirve
 
-Odoo Upgrade convierte la base pero no porta los módulos de terceros.
-`l10n_do_accounting` añadía columnas a **tablas nativas** (`account_move`,
-`res_partner`, `account_journal`…): tras el upgrade esas columnas siguen en la
-base con sus datos, pero Odoo 19 no las conoce y la información es inaccesible
-desde la interfaz.
+Odoo Upgrade convierte la base pero no porta los módulos de terceros. Eso deja
+los datos huérfanos: las columnas siguen en la base pero Odoo 19 no las conoce,
+así que la información no se puede consultar, filtrar ni exportar.
 
-Este módulo solo las declara para que el ORM las reconozca. Sin lógica que
-pueda alterar el dato histórico.
+Peor aún: los módulos quedan en estado `to upgrade`. Odoo los da por instalados
+y espera su código; sin él, la base arrastra estados inconsistentes.
 
-## Qué preserva
+Estos módulos declaran los campos para que el ORM los reconozca. Nada más.
 
-**26 campos en 7 modelos**, generados desde el esquema real de la base migrada,
-no del código v13. Se declaran **todos los campos del módulo original, tengan
-dato o no**: 13 con dato, 13 vacíos.
+## Los módulos
 
-Medido sobre el dump de origen de PSI (ticket 4558031):
+| Módulo | Campos | Qué preserva |
+|---|---:|---|
+| `l10n_do_accounting` | **30** | ~308.500 valores fiscales, y los **22 tipos de documento** (NCF) |
+| `l10n_do_pos` | **24** | Campos de POS y el modelo `pos.order.payment.credit.note` |
+| `l10n_do_debit_note` | 0 | Solo su grupo de seguridad: no declara campos propios |
+| `l10n_do_purchase` | 0 | Nada: no declara campos ni datos |
+
+Se conservan los cuatro aunque dos no tengan campos, para que la
+correspondencia con `13.0` sea exacta y los `depends` resuelvan solos.
+
+### Campos con más volumen (medidos en la base de PSI)
 
 | Campo | Modelo | Registros |
 |---|---|---:|
@@ -41,89 +50,97 @@ Medido sobre el dump de origen de PSI (ticket 4558031):
 | `expiration_date` | `ir.sequence` | 346 |
 | `l10n_do_payment_form` | `account.journal` | 76 |
 | `l10n_do_ncf_type` | `l10n_latam.document.type` | 21 |
-| e-CF y moneda | `res.company` | 6 |
-| **Total** | | **~308.500** |
 
-## Qué NO trae, a propósito
+Se declaran **todos los campos del código v13**, tengan dato o no: el módulo es
+fiel al original y sirve en cualquier cliente, no solo donde se midió.
 
-- **Cero lógica**: sin `compute`, `default`, `onchange` ni `constrains`.
-  Verificable:
+## Qué se quita, y qué NO
+
+**Se quita:**
+
+- Toda la lógica: `compute`, `default`, `related`, `onchange`, `constrains`,
+  `create`/`write`/`unlink`. Verificable:
 
   ```bash
-  grep -cE "@api\.(depends|onchange|constrains)|compute=|default=|def (create|write|unlink)" */models/*.py
+  grep -rcE "@api\.|compute=|default=|related=|def (create|write|unlink)" */models/*.py
   # 0
   ```
 
-- Todos los campos `readonly=True`.
+- Todas las vistas (`views/`): son interfaz, no dato.
+- Los **wizards**: son `TransientModel`, no guardan histórico. Verificado: sus
+  tablas tienen 0 filas.
+- Los `One2many`: su inverso pertenece al otro lado de la relación.
+
+**Se conserva:**
+
+- `data/` y `security/`: **crean registros con XML-ID propio**. Quitarlos hace
+  que Odoo los borre por huérfanos al actualizar.
+- Los `depends` originales, sin tocar.
+- Los nombres de campo, su tipo y su `string`.
+
+> ⚠️ **La lección más cara de esta rama.** En una primera versión se quitó
+> `data/l10n_latam.document.type.csv` por considerarlo "datos, no estructura".
+> Al actualizar, Odoo borró los **22 tipos de documento** —eran suyos por
+> XML-ID— y con ellos **36.289 referencias en `account.move` y 176.204 en
+> `account.move.line`** quedaron a NULL. Un dummy que borra lo que pretende
+> preservar es peor que no tenerlo.
+
+## Adaptaciones obligadas a Odoo 19
+
 - Los `Selection` se declaran como `Char`: si la base tuviera un valor fuera de
   la lista v13, un `Selection` lo ocultaría en la interfaz.
-- **Excluidos los campos `l10n_latam_*`**: pertenecen a
-  `l10n_latam_invoice_document`, **nativo en Odoo 19**, que ya los declara.
-  Redeclararlos impediría instalar el módulo.
-
-## Los otros tres módulos del repo
-
-Revisados uno por uno; ninguno justifica una versión dummy:
-
-| Módulo | Campos propios | Motivo |
-|---|---|---|
-| `l10n_do_debit_note` | **ninguno** | Solo lógica y vistas |
-| `l10n_do_purchase` | **ninguno** | Solo lógica y vistas |
-| `l10n_do_pos` | 26 declarados | Sus tablas y columnas **no existen** en la base: PSI no usó POS |
-
-## Caso B: cuándo tiene sentido instalarlo
-
-Es un módulo de **campos heredados**, no de tablas propias:
-
-- **No necesita `uninstall_hook`**: las columnas son de tablas nativas, así que
-  desinstalarlo no las borra.
-- **Pero solo sirve si la columna ya existe con datos.** Si no existe,
-  instalarlo **la crea vacía** en lugar de exponer nada — y al desinstalarlo
-  Odoo se la lleva.
-
-Antes de darlo por útil en una base, medir:
-
-```sql
-SELECT count(*) FROM account_move WHERE l10n_do_income_type IS NOT NULL;
-```
-
-> **Esto no es teórico.** En el staging de PSI se desinstaló un predecesor de
-> este módulo dando por hecho que sus campos estaban vacíos. No lo estaban: se
-> perdieron ~308.500 valores. La lección: **contar siempre contra el dump de
-> origen restaurado**, nunca contra la base en la que se va a operar.
+- `l10n_do_itbis_amount` usaba `currency_field="always_set_currency_id"`, campo
+  que **no existe en Odoo 19**. Se apunta a `currency_id`.
+- `pos.order.payment.credit.note.currency_id` era un `related`; al quitar la
+  lógica se queda sin `comodel_name`, pero el `Monetary` del mismo modelo lo
+  necesita. Se declara como `Many2one` a `res.currency`.
 
 ## Instalación
 
 **Con la instancia parada.** Un `-i`/`-u` contra una base en uso son dos
 procesos escribiendo el registry a la vez.
 
+Si los módulos vienen del upgrade en estado `to upgrade`, la operación es `-u`
+y no `-i`: Odoo los reconoce y solo les pone el código encima.
+
 ```bash
 sudo systemctl stop odona-<dominio>.service
-odoo -c <conf> -i l10n_do_accounting_legacy --stop-after-init
+odoo -c <conf> -u l10n_do_accounting,l10n_do_debit_note,l10n_do_purchase --stop-after-init
 sudo systemctl start odona-<dominio>.service
 ```
 
+> `l10n_do_pos` **arrastra `point_of_sale`** por su `depends`. No lo instales en
+> una base que no usa POS.
+
 ## Validado
 
-Sobre un clon del dump original de Odoo Upgrade (2026-08-24):
+Sobre clones del dump original de Odoo Upgrade (PSI, ticket 4558031), 2026-08-24:
 
-- Instalación exit 0, sin errores.
-- **Ningún conteo cambió** tras instalar: las 26 columnas conservan sus valores.
+- Los tres módulos en `to upgrade` pasan a `installed`, exit 0.
+- **Ningún conteo cambió**: comparación campo por campo antes/después, idéntica.
+- Los 22 tipos de documento intactos, con su XML-ID de `l10n_do_accounting`.
 - Lecturas reales por ORM: `BILL/2026/1892` → income `01`, expense `02`,
-  `is_ecf_invoice` True; partner `00112944400` → `taxpayer`; línea 652439 →
-  ITBIS 754,02.
-- `search_count` sobre `l10n_do_income_type` → 110.089.
-- Ninguno de los 26 campos existe ya en el core de Odoo 19 ni en enterprise:
-  cero conflictos.
+  `is_ecf_invoice` True, tipo "Crédito Fiscal Electrónica"; línea 652439 →
+  ITBIS 754,02 DOP; diario "Banco Popular / 7902" → `bank`.
+- `search_count`: 110.089 en `l10n_do_income_type`, 176.204 en
+  `account.move.line.l10n_latam_document_type_id`.
+- `l10n_do_pos` instala limpio por separado (exit 0).
 
 ## Retirada
 
 Es **temporal**, para el periodo de migración. Se desinstala cuando el paquete
 definitivo de la localización declare estos mismos campos.
 
+Al llevar los **nombres originales**, el reemplazo es directo: se sustituye el
+código del dummy por el funcional y se actualiza el módulo.
+
+> `l10n_do_pos` crea el modelo `pos.order.payment.credit.note`, con **tabla
+> propia**. Si algún día tiene filas, desinstalarlo se las llevaría: haría falta
+> un `uninstall_hook`. Hoy está a 0 y no lo lleva.
+
 ## Ramas de este repositorio
 
 | Rama | Contenido |
 |---|---|
 | `13.0` | Los módulos funcionales originales |
-| `19.0-dummy-pre13` | **Esta**: versión neutralizada para bases ex-v13 |
+| `19.0-dummy-pre13` | **Esta**: versiones neutralizadas para bases ex-v13 |
