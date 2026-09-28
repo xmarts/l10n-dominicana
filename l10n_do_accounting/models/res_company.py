@@ -1,11 +1,10 @@
-# Generado desde el codigo v13: campos sin logica ni vistas.
+# Historico v13. l10n_do_country_code, l10n_do_ecf_issuer y
+# l10n_do_ecf_deferred_submissions los declara l10n_do_ecf (Jenrax).
 from odoo import fields, models
 
 
 class ResCompany(models.Model):
     _inherit = "res.company"
-    l10n_do_country_code = fields.Char(string='Country Code', readonly=True)
-    l10n_do_dgii_start_date = fields.Date(string='Activities Start Date', readonly=True)
-    l10n_do_default_client = fields.Char(string='Default Customer', readonly=True)
-    l10n_do_ecf_issuer = fields.Boolean(string='Is e-CF issuer', help='When activating this field, NCF issuance is disabled.', readonly=True)
-    l10n_do_ecf_deferred_submissions = fields.Boolean(string='Deferred submissions', help='Identify taxpayers who have been previously authorized to have sales through offline mobile devices such as sales with Handheld, enter others.', readonly=True)
+
+    l10n_do_dgii_start_date = fields.Date(string="Inicio de actividades (v13)", readonly=True)
+    l10n_do_default_client = fields.Char(string="Cliente por defecto (v13)", readonly=True)
