@@ -106,9 +106,22 @@ def _conteos_base(cr):
         "account_move.x_studio_di_numero_de_comprobante": "SELECT count(*) FROM account_move WHERE nullif(x_studio_di_numero_de_comprobante, '') IS NOT NULL",
         "account_move.x_studio_rf_tipo_de_contribuyente": "SELECT count(*) FROM account_move WHERE x_studio_rf_tipo_de_contribuyente IS NOT NULL",
         "account_move.itbis_to_cost": "SELECT count(*) FROM account_move WHERE itbis_to_cost",
+        # Cazar: e-NCF emitido fuera de la localizacion (campo de Studio).
+        "account_move.x_studio_numero_de_ncf_electronico": "SELECT count(*) FROM account_move WHERE nullif(x_studio_numero_de_ncf_electronico, '') IS NOT NULL",
         "payment_invoice_line": "SELECT count(*) FROM payment_invoice_line",
     }
+    # Columnas que solo tiene alguna base (PSI o Cazar): si faltan, el conteo
+    # se omite sin lanzar la consulta (si no, sql_db la registra como ERROR).
+    opcionales = {
+        "account_move.x_studio_di_numero_de_comprobante": ("account_move", "x_studio_di_numero_de_comprobante"),
+        "account_move.x_studio_rf_tipo_de_contribuyente": ("account_move", "x_studio_rf_tipo_de_contribuyente"),
+        "account_move.itbis_to_cost": ("account_move", "itbis_to_cost"),
+        "account_move.x_studio_numero_de_ncf_electronico": ("account_move", "x_studio_numero_de_ncf_electronico"),
+    }
     for clave, sql in consultas.items():
+        if clave in opcionales and not _column_exists(cr, *opcionales[clave]):
+            _logger.info("puente fase 0: conteo %s omitido (la columna no existe en esta base)", clave)
+            continue
         cr.execute("SAVEPOINT psi_conteo")
         try:
             cr.execute(sql)
@@ -209,9 +222,17 @@ def migrate(cr, version):
     # --- account.tax --------------------------------------------------------
     # v13 marcaba en purchase_tax_type las retenciones; el ITBIS, ISC, otros y
     # propina los reconocia por el nombre del grupo de impuestos.
+    # Cazar no marcaba purchase_tax_type (todo 'none') y tiene las retenciones
+    # en los grupos ITBIS e ISR con importe negativo: sin las tres reglas
+    # siguientes la retencion de ITBIS saldria como 'itbis' (Jenrax la sumaria
+    # al ITBIS facturado) y el ISR como 'none' (no llegaria al 606).
     _crear(cr, "account_tax", "l10n_do_tax_type", "varchar", """
         UPDATE account_tax t SET l10n_do_tax_type = CASE
             WHEN t.purchase_tax_type IN ('itbis', 'ritbis', 'isr', 'isc', 'other', 'tip', 'rext') THEN t.purchase_tax_type
+            WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'ITBIS' AND t.amount < 0 THEN 'ritbis'
+            WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'ISR'
+                 AND (coalesce(t.name->>'es_DO', t.name->>'en_US') ILIKE '%exterior%' OR t.amount = -27) THEN 'rext'
+            WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'ISR' THEN 'isr'
             WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'ITBIS' THEN 'itbis'
             WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'ISC' THEN 'isc'
             WHEN coalesce(g.name->>'es_DO', g.name->>'en_US') = 'Otros Impuestos' THEN 'other'
